@@ -1,13 +1,13 @@
 {
-  "name": "AdiVault File Explorer",
-  "short_name": "FileViewer",
+  "name": "AdVault File Viewer",
+  "short_name": "AdVault",
   "start_url": "index.html",
   "display": "standalone",
   "background_color": "#000000",
   "theme_color": "#00ffaa",
   "icons": [
     {
-      "src": "icon-512.png",
+      "src": "icon.png",
       "sizes": "512x512",
       "type": "image/png"
     }
