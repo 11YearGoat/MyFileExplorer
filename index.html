@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AdiVault File Explorer</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon-512.png" />
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", sans-serif;
+      background: #0f0f0f;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      height: 100vh;
+      padding: 20px;
+      background: radial-gradient(ellipse at top, #1b1b1b, #000);
+    }
+
+    h1 {
+      font-weight: 900;
+      font-size: 2em;
+      margin-bottom: 10px;
+      text-align: center;
+      background: linear-gradient(to right, #0ff, #0f0, #ff0);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    #list {
+      list-style: none;
+      padding: 0;
+      width: 90%;
+      max-width: 600px;
+      margin-top: 20px;
+      overflow-y: auto;
+      height: 60vh;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid #444;
+      border-radius: 12px;
+      padding: 10px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 0 15px #00ffaa20;
+    }
+
+    li {
+      padding: 8px;
+      margin: 4px 0;
+      border-bottom: 1px solid #333;
+      font-size: 1em;
+      overflow-x: auto;
+    }
+
+    button {
+      margin-top: 20px;
+      padding: 12px 24px;
+      border: none;
+      background: #00ffaa;
+      color: #000;
+      font-weight: bold;
+      border-radius: 10px;
+      font-size: 1em;
+      cursor: pointer;
+      transition: 0.3s ease;
+    }
+
+    button:hover {
+      background: #00ffcc;
+    }
+  </style>
+</head>
+<body>
+  <h1>📂 AdiVault File Viewer</h1>
+  <button onclick="openFolder(true)">📁 Pick Folder</button>
+  <ul id="list"><li>Loading...</li></ul>
+
+  <script>
+    let dirHandle = null;
+
+    async function saveHandle(handle) {
+      const db = await window.indexedDB.open("FileViewerDB", 1);
+      db.onupgradeneeded = () => db.result.createObjectStore("handles");
+      db.onsuccess = () => {
+        const tx = db.result.transaction("handles", "readwrite");
+        tx.objectStore("handles").put(handle, "folder");
+        document.cookie = "hasAccess=true";
+      };
+    }
+
+    async function loadHandle() {
+      return new Promise((resolve, reject) => {
+        const dbReq = window.indexedDB.open("FileViewerDB", 1);
+        dbReq.onupgradeneeded = () => dbReq.result.createObjectStore("handles");
+        dbReq.onsuccess = () => {
+          const tx = dbReq.result.transaction("handles", "readonly");
+          const req = tx.objectStore("handles").get("folder");
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject();
+        };
+      });
+    }
+
+    async function openFolder(firstTime = false) {
+      try {
+        if (firstTime) {
+          dirHandle = await window.showDirectoryPicker();
+          await saveHandle(dirHandle);
+        } else {
+          dirHandle = await loadHandle();
+          if (!dirHandle) return alert("No saved access. Pick folder manually.");
+          const perm = await dirHandle.requestPermission({ mode: "read" });
+          if (perm !== "granted") {
+            document.cookie = "hasAccess=false";
+            return alert("Permission denied. Pick folder again.");
+          }
+        }
+
+        const list = document.getElementById("list");
+        list.innerHTML = "";
+
+        for await (const [name, handle] of dirHandle.entries()) {
+          const li = document.createElement("li");
+          li.textContent = name + (handle.kind === "directory" ? "/" : "");
+          list.appendChild(li);
+        }
+      } catch (err) {
+        console.error("Error:", err);
+        alert("Failed to open folder: " + err.message);
+      }
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      if (document.cookie.includes("hasAccess=true")) {
+        openFolder(false);
+      } else {
+        document.getElementById("list").innerHTML = "<li>No folder selected</li>";
+      }
+    });
+  </script>
+</body>
+</html>
