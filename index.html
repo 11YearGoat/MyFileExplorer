@@ -1,149 +1,125 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AdiVault File Explorer</title>
-  <link rel="manifest" href="manifest.json" />
-  <link rel="icon" href="icon-512.png" />
+  <meta charset="UTF‑8"/>
+  <meta name="viewport" content="width=device-width, initial‑scale=1.0"/>
+  <title>AdVault Explorer</title>
+  <link rel="manifest" href="manifest.json"/>
+  <link rel="icon" href="icon.png"/>
   <style>
-    * {
-      box-sizing: border-box;
-    }
-
     body {
-      margin: 0;
-      font-family: "Segoe UI", sans-serif;
-      background: #0f0f0f;
-      color: #fff;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
-      height: 100vh;
-      padding: 20px;
-      background: radial-gradient(ellipse at top, #1b1b1b, #000);
+      margin:0; padding:0;
+      background:#111; color:#00ffaa;
+      font-family: monospace;
+      display:flex; flex-direction:column;
+      align-items:center; height:100vh;
+      padding:20px;
     }
-
-    h1 {
-      font-weight: 900;
-      font-size: 2em;
-      margin-bottom: 10px;
-      text-align: center;
-      background: linear-gradient(to right, #0ff, #0f0, #ff0);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
-    #list {
-      list-style: none;
-      padding: 0;
-      width: 90%;
-      max-width: 600px;
-      margin-top: 20px;
-      overflow-y: auto;
-      height: 60vh;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid #444;
-      border-radius: 12px;
-      padding: 10px;
-      backdrop-filter: blur(10px);
-      box-shadow: 0 0 15px #00ffaa20;
-    }
-
-    li {
-      padding: 8px;
-      margin: 4px 0;
-      border-bottom: 1px solid #333;
-      font-size: 1em;
-      overflow-x: auto;
-    }
-
+    h1 { margin:0; padding:10px; font-size:1.8em; }
     button {
-      margin-top: 20px;
-      padding: 12px 24px;
-      border: none;
-      background: #00ffaa;
-      color: #000;
-      font-weight: bold;
-      border-radius: 10px;
-      font-size: 1em;
-      cursor: pointer;
-      transition: 0.3s ease;
+      margin:10px; padding:10px 20px;
+      background:#00ffaa; border:none;
+      color:#000; border-radius:5px;
+      font-weight:bold; cursor:pointer;
     }
-
-    button:hover {
-      background: #00ffcc;
+    button:hover { background:#00ffcc; }
+    ul {
+      width:90%; max-width:600px;
+      height:60vh; overflow:auto;
+      padding:0; list-style:none;
+      border:1px solid #333;
+      backdrop-filter:blur(5px);
+      background-color: rgba(0, 0, 0, 0.2);
     }
+    li {
+      padding:8px; border-bottom:1px solid #333;
+      cursor:pointer;
+    }
+    li:hover { background:#004444; }
   </style>
 </head>
 <body>
-  <h1>📂 AdiVault File Viewer</h1>
-  <button onclick="openFolder(true)">📁 Pick Folder</button>
-  <ul id="list"><li>Loading...</li></ul>
+  <h1>📂 AdVault Explorer</h1>
+  <button onclick="openFolder(true)">Pick Folder</button>
+  <button onclick="goBack()">⬅️ Up</button>
+  <ul id="list"></ul>
 
   <script>
-    let dirHandle = null;
+  let currentHandle = null;
+  const stack = [];
 
-    async function saveHandle(handle) {
-      const db = await window.indexedDB.open("FileViewerDB", 1);
-      db.onupgradeneeded = () => db.result.createObjectStore("handles");
-      db.onsuccess = () => {
-        const tx = db.result.transaction("handles", "readwrite");
-        tx.objectStore("handles").put(handle, "folder");
-        document.cookie = "hasAccess=true";
-      };
-    }
-
-    async function loadHandle() {
-      return new Promise((resolve, reject) => {
-        const dbReq = window.indexedDB.open("FileViewerDB", 1);
-        dbReq.onupgradeneeded = () => dbReq.result.createObjectStore("handles");
-        dbReq.onsuccess = () => {
-          const tx = dbReq.result.transaction("handles", "readonly");
-          const req = tx.objectStore("handles").get("folder");
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => reject();
-        };
-      });
-    }
-
-    async function openFolder(firstTime = false) {
-      try {
-        if (firstTime) {
-          dirHandle = await window.showDirectoryPicker();
-          await saveHandle(dirHandle);
+  async function showDirectory(handle) {
+    currentHandle = handle;
+    const list = document.getElementById('list');
+    list.innerHTML = '';
+    for await (const [name, h] of handle.entries()) {
+      const li = document.createElement('li');
+      li.textContent = h.kind === 'directory' ? name + '/' : name;
+      li.onclick = () => {
+        if (h.kind === 'directory') {
+          stack.push(handle);
+          showDirectory(h);
         } else {
-          dirHandle = await loadHandle();
-          if (!dirHandle) return alert("No saved access. Pick folder manually.");
-          const perm = await dirHandle.requestPermission({ mode: "read" });
-          if (perm !== "granted") {
-            document.cookie = "hasAccess=false";
-            return alert("Permission denied. Pick folder again.");
-          }
+          previewFile(h);
         }
-
-        const list = document.getElementById("list");
-        list.innerHTML = "";
-
-        for await (const [name, handle] of dirHandle.entries()) {
-          const li = document.createElement("li");
-          li.textContent = name + (handle.kind === "directory" ? "/" : "");
-          list.appendChild(li);
-        }
-      } catch (err) {
-        console.error("Error:", err);
-        alert("Failed to open folder: " + err.message);
-      }
+      };
+      list.appendChild(li);
     }
+  }
 
-    window.addEventListener("DOMContentLoaded", () => {
-      if (document.cookie.includes("hasAccess=true")) {
-        openFolder(false);
-      } else {
-        document.getElementById("list").innerHTML = "<li>No folder selected</li>";
-      }
-    });
+  async function openFolder(reset = false) {
+    const handle = await window.showDirectoryPicker();
+    stack.length = 0;
+    saveHandle(handle);
+    showDirectory(handle);
+  }
+
+  async function goBack() {
+    if (stack.length) {
+      const parent = stack.pop();
+      showDirectory(parent);
+    }
+  }
+
+  async function previewFile(handle) {
+    const file = await handle.getFile();
+    alert(`File: ${file.name}\nSize: ${file.size} bytes`);
+  }
+
+  function saveHandle(handle) {
+    const dbReq = indexedDB.open('advaultDB', 1);
+    dbReq.onupgradeneeded = e => {
+      const db = e.target.result;
+      db.createObjectStore('vault');
+    };
+    dbReq.onsuccess = e => {
+      const db = e.target.result;
+      const tx = db.transaction('vault', 'readwrite');
+      tx.objectStore('vault').put(handle, 'folder');
+      document.cookie = 'access=true';
+    };
+  }
+
+  function restoreAccess() {
+    if (!document.cookie.includes('access=true')) return;
+    const dbReq = indexedDB.open('advaultDB', 1);
+    dbReq.onsuccess = e => {
+      const db = e.target.result;
+      const tx = db.transaction('vault', 'readonly');
+      tx.objectStore('vault').get('folder').onsuccess = async ev => {
+        const h = ev.target.result;
+        if (h && (await h.queryPermission({ mode: 'read' })) === 'granted') {
+          showDirectory(h);
+        }
+      };
+    };
+  }
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js');
+  }
+
+  window.onload = restoreAccess;
   </script>
 </body>
 </html>
