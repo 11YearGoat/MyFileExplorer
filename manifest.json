@@ -1,15 +1,1 @@
-{
-  "name": "AdVault File Viewer",
-  "short_name": "AdVault",
-  "start_url": "index.html",
-  "display": "standalone",
-  "background_color": "#000000",
-  "theme_color": "#00ffaa",
-  "icons": [
-    {
-      "src": "icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
-  ]
-}
+{"name":"File Explorer","start_url":".","display":"standalone","icons":[{"src":"icon-512.png","sizes":"512x512","type":"image/png"}]}

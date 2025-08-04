@@ -1,125 +1,103 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF‑8"/>
-  <meta name="viewport" content="width=device-width, initial‑scale=1.0"/>
-  <title>AdVault Explorer</title>
-  <link rel="manifest" href="manifest.json"/>
-  <link rel="icon" href="icon.png"/>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>File Explorer</title>
+  <link rel="manifest" href="manifest.json" />
   <style>
-    body {
-      margin:0; padding:0;
-      background:#111; color:#00ffaa;
-      font-family: monospace;
-      display:flex; flex-direction:column;
-      align-items:center; height:100vh;
-      padding:20px;
+    body { margin: 0; font-family: monospace; background: #111; color: #eee; }
+    header {
+      display: flex; padding: 10px; background: #222; align-items: center;
+      justify-content: space-between; gap: 10px;
     }
-    h1 { margin:0; padding:10px; font-size:1.8em; }
-    button {
-      margin:10px; padding:10px 20px;
-      background:#00ffaa; border:none;
-      color:#000; border-radius:5px;
-      font-weight:bold; cursor:pointer;
+    button, input[type="search"] {
+      background: #333; color: #0f0; border: none; padding: 8px 12px;
+      border-radius: 4px; cursor: pointer;
     }
-    button:hover { background:#00ffcc; }
-    ul {
-      width:90%; max-width:600px;
-      height:60vh; overflow:auto;
-      padding:0; list-style:none;
-      border:1px solid #333;
-      backdrop-filter:blur(5px);
-      background-color: rgba(0, 0, 0, 0.2);
-    }
+    main { padding: 10px; }
+    ul { list-style: none; padding: 0; }
     li {
-      padding:8px; border-bottom:1px solid #333;
-      cursor:pointer;
+      margin: 4px 0; padding: 6px; background: #1a1a1a;
+      border: 1px solid #444; border-radius: 4px;
+      cursor: pointer;
     }
-    li:hover { background:#004444; }
+    li:hover { background: #333; }
+    pre, img, audio, video { margin-top: 10px; max-width: 100%; }
+    #viewer { margin-top: 10px; }
   </style>
 </head>
 <body>
-  <h1>📂 AdVault Explorer</h1>
-  <button onclick="openFolder(true)">Pick Folder</button>
-  <button onclick="goBack()">⬅️ Up</button>
-  <ul id="list"></ul>
+  <header>
+    <button onclick="chooseDir()">📂 Open Folder</button>
+    <input type="search" id="searchBox" placeholder="Search file..." oninput="renderFiles()" />
+  </header>
+  <main>
+    <ul id="fileList"></ul>
+    <div id="viewer"></div>
+  </main>
 
-  <script>
-  let currentHandle = null;
-  const stack = [];
+<script>
+let dirHandle, files = [];
 
-  async function showDirectory(handle) {
-    currentHandle = handle;
-    const list = document.getElementById('list');
-    list.innerHTML = '';
-    for await (const [name, h] of handle.entries()) {
-      const li = document.createElement('li');
-      li.textContent = h.kind === 'directory' ? name + '/' : name;
-      li.onclick = () => {
-        if (h.kind === 'directory') {
-          stack.push(handle);
-          showDirectory(h);
-        } else {
-          previewFile(h);
-        }
-      };
-      list.appendChild(li);
-    }
+window.onload = async () => {
+  if ('showDirectoryPicker' in window) {
+    const saved = await navigator.storage.getDirectory?.();
+    if (saved) { dirHandle = saved; await loadFiles(); }
   }
+};
 
-  async function openFolder(reset = false) {
-    const handle = await window.showDirectoryPicker();
-    stack.length = 0;
-    saveHandle(handle);
-    showDirectory(handle);
+async function chooseDir() {
+  try {
+    dirHandle = await window.showDirectoryPicker();
+    await loadFiles();
+  } catch (e) {
+    console.error('Access denied or cancelled.');
   }
+}
 
-  async function goBack() {
-    if (stack.length) {
-      const parent = stack.pop();
-      showDirectory(parent);
-    }
+async function loadFiles() {
+  files = [];
+  for await (const [name, handle] of dirHandle.entries()) {
+    if (handle.kind === "file") files.push({ name, handle });
   }
+  renderFiles();
+}
 
-  async function previewFile(handle) {
-    const file = await handle.getFile();
-    alert(`File: ${file.name}\nSize: ${file.size} bytes`);
+function renderFiles() {
+  const search = document.getElementById("searchBox").value.toLowerCase();
+  const list = document.getElementById("fileList");
+  list.innerHTML = '';
+  files.filter(f => f.name.toLowerCase().includes(search)).forEach(f => {
+    const li = document.createElement("li");
+    li.textContent = f.name;
+    li.onclick = () => openFile(f);
+    list.appendChild(li);
+  });
+}
+
+async function openFile(f) {
+  const file = await f.handle.getFile();
+  const ext = f.name.split('.').pop().toLowerCase();
+  const viewer = document.getElementById("viewer");
+  viewer.innerHTML = '';
+
+  if (['txt','md','js','html','css','py','json','xml'].includes(ext)) {
+    const text = await file.text();
+    viewer.innerHTML = `<pre>${text.replace(/[&<>"']/g, m => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[m])}</pre>`;
+  } else if (['jpg','jpeg','png','gif','webp'].includes(ext)) {
+    viewer.innerHTML = `<img src="${URL.createObjectURL(file)}" />`;
+  } else if (['mp3','wav','ogg'].includes(ext)) {
+    viewer.innerHTML = `<audio controls src="${URL.createObjectURL(file)}"></audio>`;
+  } else if (['mp4','webm','ogg'].includes(ext)) {
+    viewer.innerHTML = `<video controls src="${URL.createObjectURL(file)}"></video>`;
+  } else {
+    viewer.innerHTML = `<p>Unsupported file type: ${ext}</p>`;
   }
-
-  function saveHandle(handle) {
-    const dbReq = indexedDB.open('advaultDB', 1);
-    dbReq.onupgradeneeded = e => {
-      const db = e.target.result;
-      db.createObjectStore('vault');
-    };
-    dbReq.onsuccess = e => {
-      const db = e.target.result;
-      const tx = db.transaction('vault', 'readwrite');
-      tx.objectStore('vault').put(handle, 'folder');
-      document.cookie = 'access=true';
-    };
-  }
-
-  function restoreAccess() {
-    if (!document.cookie.includes('access=true')) return;
-    const dbReq = indexedDB.open('advaultDB', 1);
-    dbReq.onsuccess = e => {
-      const db = e.target.result;
-      const tx = db.transaction('vault', 'readonly');
-      tx.objectStore('vault').get('folder').onsuccess = async ev => {
-        const h = ev.target.result;
-        if (h && (await h.queryPermission({ mode: 'read' })) === 'granted') {
-          showDirectory(h);
-        }
-      };
-    };
-  }
-
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js');
-  }
-
-  window.onload = restoreAccess;
-  </script>
+}
+</script>
 </body>
 </html>
