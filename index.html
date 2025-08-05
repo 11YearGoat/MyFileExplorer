@@ -1,137 +1,106 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>AdiVault File Explorer</title>
+  <title>File Explorer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="manifest" href="manifest.json">
   <style>
-    body {
-      background: #0d0d0d;
-      color: #fff;
-      font-family: monospace;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 1rem;
-    }
-    button {
-      background: #111;
-      color: #0f0;
-      border: 1px solid #0f0;
-      padding: 0.5rem 1rem;
-      margin: 0.5rem;
-      cursor: pointer;
-    }
-    input[type="text"] {
-      background: #111;
-      color: #0f0;
-      border: 1px solid #0f0;
-      padding: 0.5rem;
-      width: 300px;
-    }
-    #fileList {
-      width: 90%;
-      max-height: 60vh;
-      overflow-y: auto;
-      border-top: 1px solid #0f0;
-      margin-top: 1rem;
-    }
-    .file-item {
-      padding: 0.4rem;
-      border-bottom: 1px solid #0f0;
-      cursor: pointer;
-    }
-    .file-item:hover {
-      background: #222;
-    }
-    pre, img, audio, video {
-      margin-top: 1rem;
-      max-width: 100%;
-    }
-    #viewer {
-      margin-top: 2rem;
-      width: 90%;
-    }
+    body { margin:0; font-family: monospace; background:#111; color:#eee; display:flex; flex-direction:column; height:100vh; }
+    header { background:#222; padding:10px; display:flex; gap:10px; align-items:center; }
+    button, input { background:#333; color:#0f0; border:none; padding:8px 12px; border-radius:4px; cursor:pointer; }
+    #breadcrumbs { flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    #search { flex:1; }
+    main { flex:1; overflow-y:auto; padding:10px; }
+    .entry { padding:6px; margin:4px 0; background:#1a1a1a; border:1px solid #444; border-radius:4px; cursor:pointer; display:flex; align-items:center; }
+    .entry:hover { background:#333; }
+    .entry .icon { width:20px; margin-right:8px; }
+    #viewer { padding:10px; border-top:1px solid #444; overflow:auto; }
+    pre, img, audio, video { max-width:100%; margin-top:10px; }
   </style>
 </head>
 <body>
-  <h2>AdiVault File Explorer</h2>
-  <button onclick="pickFolder()">📂 Open Folder</button>
-  <input type="text" id="search" placeholder="Search files..." oninput="filterFiles()" />
-  <div id="fileList"></div>
+  <header>
+    <button onclick="pickFolder()">📂 Open</button>
+    <button onclick="goUp()">⬆️ Up</button>
+    <div id="breadcrumbs">/</div>
+    <input type="text" id="search" placeholder="Search..." oninput="renderEntries()">
+  </header>
+  <main id="list"></main>
   <div id="viewer"></div>
-
   <script>
-    let fileHandles = [];
+    let dirStack = [], currentHandle, entries = [];
 
     async function pickFolder() {
       try {
-        const dirHandle = await window.showDirectoryPicker({id: 'adivault', mode: 'read'});
-        localStorage.setItem('last-access', 'true');
-        loadFiles(dirHandle);
-      } catch (err) {
-        alert("Permission denied or cancelled.");
+        const handle = await window.showDirectoryPicker();
+        dirStack = [handle];
+        await loadEntries();
+      } catch {}
+    }
+
+    async function loadEntries() {
+      currentHandle = dirStack[dirStack.length-1];
+      document.getElementById('breadcrumbs').textContent = '/' + dirStack.map(h=>h.name).join('/');
+      entries = [];
+      for await (const [name, h] of currentHandle.entries()) {
+        entries.push({ name, handle:h, kind:h.kind });
       }
+      renderEntries();
+      document.getElementById('viewer').innerHTML = '';
     }
 
-    async function loadFiles(dirHandle) {
-      fileHandles = [];
-      document.getElementById('fileList').innerHTML = '';
-      for await (const [name, handle] of dirHandle.entries()) {
-        if (handle.kind === 'file') {
-          fileHandles.push({ name, handle });
-        }
-      }
-      showFileList();
+    function renderEntries() {
+      const q = document.getElementById('search').value.toLowerCase();
+      const list = document.getElementById('list');
+      list.innerHTML = '';
+      entries
+        .filter(e=>e.name.toLowerCase().includes(q))
+        .sort((a,b)=> a.kind===b.kind? a.name.localeCompare(b.name) : a.kind==='directory'? -1:1)
+        .forEach(e=>{
+          const div = document.createElement('div');
+          div.className='entry';
+          div.innerHTML = `<span class="icon">${e.kind==='directory'?'📁':'📄'}</span>${e.name}`;
+          div.onclick = ()=> e.kind==='directory'? enterDir(e.handle) : openFile(e.handle);
+          list.appendChild(div);
+        });
     }
 
-    function showFileList() {
-      const container = document.getElementById('fileList');
-      container.innerHTML = '';
-      fileHandles.forEach((file, index) => {
-        const div = document.createElement('div');
-        div.className = 'file-item';
-        div.textContent = file.name;
-        div.onclick = () => openFile(index);
-        container.appendChild(div);
-      });
+    async function enterDir(handle) {
+      dirStack.push(handle);
+      await loadEntries();
     }
 
-    async function openFile(index) {
-      const file = await fileHandles[index].handle.getFile();
-      const type = file.type;
+    function goUp() {
+      if(dirStack.length>1){ dirStack.pop(); loadEntries(); }
+    }
+
+    async function openFile(handle) {
+      const file = await handle.getFile();
+      const ext = file.name.split('.').pop().toLowerCase();
       const viewer = document.getElementById('viewer');
       viewer.innerHTML = '';
-
-      if (type.startsWith('text') || file.name.match(/\.(html?|js|css|json|py)$/)) {
+      if(/^(txt|md|json|csv|html|js|css|py)$/.test(ext)){
         const text = await file.text();
-        viewer.innerHTML = `<pre>${escapeHtml(text)}</pre>`;
-      } else if (type.startsWith('image')) {
-        const url = URL.createObjectURL(file);
-        viewer.innerHTML = `<img src="${url}" alt="Image" />`;
-      } else if (type.startsWith('audio')) {
-        const url = URL.createObjectURL(file);
-        viewer.innerHTML = `<audio controls src="${url}"></audio>`;
-      } else if (type.startsWith('video')) {
-        const url = URL.createObjectURL(file);
-        viewer.innerHTML = `<video controls src="${url}" style="max-height:50vh;"></video>`;
+        viewer.innerHTML=`<pre>${text.replace(/[&<"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m])}</pre>`;
+      } else if(/^(png|jpe?g|gif|webp)$/.test(ext)){
+        const url=URL.createObjectURL(file);
+        viewer.innerHTML=`<img src="${url}">`;
+      } else if(/^(mp3|wav|ogg)$/.test(ext)){
+        const url=URL.createObjectURL(file);
+        viewer.innerHTML=`<audio controls src="${url}"></audio>`;
+      } else if(/^(mp4|webm|ogg)$/.test(ext)){
+        const url=URL.createObjectURL(file);
+        viewer.innerHTML=`<video controls src="${url}" style="max-height:40vh;"></video>`;
       } else {
-        viewer.innerHTML = '<p>Unsupported file type</p>';
+        viewer.textContent='Unsupported type';
       }
     }
 
-    function escapeHtml(unsafe) {
-      return unsafe.replace(/[&<"']/g, m => ({
-        '&': '&amp;', '<': '&lt;', '"': '&quot;', "'": '&#039;'
-      })[m]);
-    }
-
-    function filterFiles() {
-      const term = document.getElementById('search').value.toLowerCase();
-      const list = document.getElementById('fileList').children;
-      for (const item of list) {
-        item.style.display = item.textContent.toLowerCase().includes(term) ? '' : 'none';
-      }
+    // register service worker
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.register('sw.js');
     }
   </script>
 </body>
